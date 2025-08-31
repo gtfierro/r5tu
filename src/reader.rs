@@ -53,6 +53,8 @@ pub struct R5tuFile {
 }
 
 impl R5tuFile {
+    #[inline]
+    fn bytes(&self) -> &[u8] { &self.data }
     pub fn open(path: &Path) -> Result<Self> {
         let data = fs::read(path)?;
         let header = Header::parse(&data).ok_or(R5Error::Invalid("short or invalid header"))?;
@@ -113,6 +115,13 @@ impl R5tuFile {
         Ok(Self { data, header, toc, id_dict, gname_dict, term_dict, gdir, idx_id2gid, idx_gname2gid, idx_pair2gid, triple_blocks })
     }
 
+    #[cfg(feature = "mmap")]
+    pub fn open_mmap(path: &Path) -> Result<Self> {
+        // Temporarily reuse the same validated load path; backing refactor can switch this
+        // to a real memory map without API changes.
+        Self::open(path)
+    }
+
     pub fn header(&self) -> &Header { &self.header }
     pub fn toc(&self) -> &[TocEntry] { &self.toc }
 
@@ -122,16 +131,16 @@ impl R5tuFile {
 
     // API placeholders per ARCH.md §4.1
     pub fn enumerate_by_id(&self, id: &str) -> Result<Vec<GraphRef>> {
-        let Some(id_id) = self.id_dict.find_id(&self.data, id) else { return Ok(Vec::new()) };
+        let Some(id_id) = self.id_dict.find_id(self.bytes(), id) else { return Ok(Vec::new()) };
         self.postings_to_graphrefs(self.idx_id2gid, id_id as usize)
     }
     pub fn enumerate_by_graphname(&self, gname: &str) -> Result<Vec<GraphRef>> {
-        let Some(gn_id) = self.gname_dict.find_id(&self.data, gname) else { return Ok(Vec::new()) };
+        let Some(gn_id) = self.gname_dict.find_id(self.bytes(), gname) else { return Ok(Vec::new()) };
         self.postings_to_graphrefs(self.idx_gname2gid, gn_id as usize)
     }
     pub fn resolve_gid(&self, id: &str, gname: &str) -> Result<Option<GraphRef>> {
-        let id_id = match self.id_dict.find_id(&self.data, id) { Some(v) => v, None => return Ok(None) } as u32;
-        let gn_id = match self.gname_dict.find_id(&self.data, gname) { Some(v) => v, None => return Ok(None) } as u32;
+        let id_id = match self.id_dict.find_id(self.bytes(), id) { Some(v) => v, None => return Ok(None) } as u32;
+        let gn_id = match self.gname_dict.find_id(self.bytes(), gname) { Some(v) => v, None => return Ok(None) } as u32;
         if let Some(gid) = self.pair_lookup(self.idx_pair2gid, id_id, gn_id)? {
             let gr = self.graphref_for_gid(gid)?;
             return Ok(Some(gr));
@@ -142,7 +151,7 @@ impl R5tuFile {
         self.decode_triple_block(gid)
     }
     pub fn term_to_string(&self, term_id: u64) -> Result<String> {
-        self.term_dict.term_to_string(&self.data, term_id)
+        self.term_dict.term_to_string(self.bytes(), term_id)
     }
 
     #[cfg(feature = "oxigraph")]
@@ -150,9 +159,9 @@ impl R5tuFile {
         use oxigraph::model::{Graph, NamedNode, NamedOrBlankNode, Triple, BlankNode, Literal};
         let mut g = Graph::new();
         for (s_id, p_id, o_id) in self.triples_ids(gid)? {
-            let s_parts = self.term_dict.term_parts(&self.data, s_id)?;
-            let p_parts = self.term_dict.term_parts(&self.data, p_id)?;
-            let o_parts = self.term_dict.term_parts(&self.data, o_id)?;
+            let s_parts = self.term_dict.term_parts(self.bytes(), s_id)?;
+            let p_parts = self.term_dict.term_parts(self.bytes(), p_id)?;
+            let o_parts = self.term_dict.term_parts(self.bytes(), o_id)?;
             let s_nb: NamedOrBlankNode = match s_parts {
                 TermParts::Iri(s) => NamedNode::new(s).map_err(|_| R5Error::Invalid("invalid subject IRI"))?.into(),
                 TermParts::BNode(label) => {
@@ -370,6 +379,7 @@ impl TermDict {
         }
     }
 
+    #[cfg_attr(not(feature = "oxigraph"), allow(dead_code))]
     fn term_parts(&self, data: &[u8], term_id: u64) -> Result<TermParts> {
         if term_id >= self.n_terms { return Err(R5Error::Invalid("term id out of range")); }
         let kinds_off = self.kinds_off as usize;
@@ -407,6 +417,7 @@ impl TermDict {
     }
 }
 
+#[cfg_attr(not(feature = "oxigraph"), allow(dead_code))]
 #[derive(Debug, Clone)]
 enum TermParts { Iri(String), BNode(String), Literal{ lex:String, dt:Option<String>, lang:Option<String> } }
 
@@ -422,9 +433,10 @@ impl<'a> Iterator for OxTripleIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         use oxigraph::model::{NamedNode, NamedOrBlankNode, BlankNode, Literal, Triple};
         let (s_id, p_id, o_id) = self.inner.next()?;
-        let s_parts = match self.file.term_dict.term_parts(&self.file.data, s_id) { Ok(v) => v, Err(e) => return Some(Err(e)) };
-        let p_parts = match self.file.term_dict.term_parts(&self.file.data, p_id) { Ok(v) => v, Err(e) => return Some(Err(e)) };
-        let o_parts = match self.file.term_dict.term_parts(&self.file.data, o_id) { Ok(v) => v, Err(e) => return Some(Err(e)) };
+        let bytes = self.file.bytes();
+        let s_parts = match self.file.term_dict.term_parts(bytes, s_id) { Ok(v) => v, Err(e) => return Some(Err(e)) };
+        let p_parts = match self.file.term_dict.term_parts(bytes, p_id) { Ok(v) => v, Err(e) => return Some(Err(e)) };
+        let o_parts = match self.file.term_dict.term_parts(bytes, o_id) { Ok(v) => v, Err(e) => return Some(Err(e)) };
         let s_nb: NamedOrBlankNode = match s_parts {
             TermParts::Iri(s) => match NamedNode::new(s) { Ok(n) => n.into(), Err(_) => return Some(Err(R5Error::Invalid("invalid subject IRI"))) },
             TermParts::BNode(label) => {
@@ -464,19 +476,21 @@ struct GDirRow { id_id: u32, gn_id: u32, triples_off: u64, triples_len: u64, n_t
 
 impl R5tuFile {
     fn gdir_header(&self) -> Result<(u64, usize)> {
+        let bytes = self.bytes();
         let base = self.gdir.off as usize;
-        if base + 16 > self.data.len() { return Err(R5Error::Corrupt("gdir header OOB".into())); }
-        let n_rows = u64::from_le_bytes(self.data[base .. base + 8].try_into().unwrap());
-        let row_size = u32::from_le_bytes(self.data[base + 8 .. base + 12].try_into().unwrap()) as usize;
+        if base + 16 > bytes.len() { return Err(R5Error::Corrupt("gdir header OOB".into())); }
+        let n_rows = u64::from_le_bytes(bytes[base .. base + 8].try_into().unwrap());
+        let row_size = u32::from_le_bytes(bytes[base + 8 .. base + 12].try_into().unwrap()) as usize;
         Ok((n_rows, row_size))
     }
 
     fn gdir_row(&self, gid: u64) -> Result<GDirRow> {
         let (n_rows, row_size) = self.gdir_header()?;
         if gid >= n_rows { return Err(R5Error::Invalid("gid out of range")); }
+        let bytes = self.bytes();
         let off = self.gdir.off as usize + 16 + gid as usize * row_size;
-        if off + row_size > self.data.len() { return Err(R5Error::Corrupt("gdir row OOB".into())); }
-        let b = &self.data[off .. off + row_size];
+        if off + row_size > bytes.len() { return Err(R5Error::Corrupt("gdir row OOB".into())); }
+        let b = &bytes[off .. off + row_size];
         Ok(GDirRow {
             id_id: u32::from_le_bytes(b[0..4].try_into().unwrap()),
             gn_id: u32::from_le_bytes(b[4..8].try_into().unwrap()),
@@ -491,8 +505,9 @@ impl R5tuFile {
 
     fn graphref_for_gid(&self, gid: u64) -> Result<GraphRef> {
         let row = self.gdir_row(gid)?;
-        let id = self.id_dict.get(&self.data, row.id_id).ok_or(R5Error::Corrupt("id str OOB".into()))?.to_string();
-        let graphname = self.gname_dict.get(&self.data, row.gn_id).ok_or(R5Error::Corrupt("gname str OOB".into()))?.to_string();
+        let bytes = self.bytes();
+        let id = self.id_dict.get(bytes, row.id_id).ok_or(R5Error::Corrupt("id str OOB".into()))?.to_string();
+        let graphname = self.gname_dict.get(bytes, row.gn_id).ok_or(R5Error::Corrupt("gname str OOB".into()))?.to_string();
         Ok(GraphRef { gid, id, graphname, n_triples: row.n_triples })
     }
 }
@@ -513,21 +528,22 @@ impl R5tuFile {
         if key_ordinal >= n_keys { return Ok(vec![]); }
         let offs_off = u64::from_le_bytes(b[8..16].try_into().unwrap()) as usize;
         let blob_off = u64::from_le_bytes(b[16..24].try_into().unwrap()) as usize;
-        if offs_off + (n_keys + 1) * 8 > self.data.len() { return Err(R5Error::Corrupt("postings offs OOB".into())); }
-        let s = u64::from_le_bytes(self.data[offs_off + key_ordinal * 8 .. offs_off + key_ordinal * 8 + 8].try_into().unwrap()) as usize;
-        let e = u64::from_le_bytes(self.data[offs_off + (key_ordinal + 1) * 8 .. offs_off + (key_ordinal + 1) * 8 + 8].try_into().unwrap()) as usize;
-        if blob_off + e > self.data.len() || blob_off + s > self.data.len() || s > e { return Err(R5Error::Corrupt("postings blob OOB".into())); }
+        let data = self.bytes();
+        if offs_off + (n_keys + 1) * 8 > data.len() { return Err(R5Error::Corrupt("postings offs OOB".into())); }
+        let s = u64::from_le_bytes(data[offs_off + key_ordinal * 8 .. offs_off + key_ordinal * 8 + 8].try_into().unwrap()) as usize;
+        let e = u64::from_le_bytes(data[offs_off + (key_ordinal + 1) * 8 .. offs_off + (key_ordinal + 1) * 8 + 8].try_into().unwrap()) as usize;
+        if blob_off + e > data.len() || blob_off + s > data.len() || s > e { return Err(R5Error::Corrupt("postings blob OOB".into())); }
         let mut off = blob_off + s;
         let end = blob_off + e;
-        let (n, o1) = read_uvarint(&self.data, off).ok_or_else(|| R5Error::Corrupt("postings n".into()))?; off = o1;
+        let (n, o1) = read_uvarint(data, off).ok_or_else(|| R5Error::Corrupt("postings n".into()))?; off = o1;
         if n == 0 { return Ok(vec![]); }
-        let (first, o_after_first) = read_uvarint(&self.data, off).ok_or_else(|| R5Error::Corrupt("postings first".into()))?; off = o_after_first;
+        let (first, o_after_first) = read_uvarint(data, off).ok_or_else(|| R5Error::Corrupt("postings first".into()))?; off = o_after_first;
         let mut out = Vec::with_capacity(n as usize);
         out.push(first);
         let mut cur = first;
         for _ in 1..n {
             if off >= end { return Err(R5Error::Corrupt("postings truncated".into())); }
-            let (d, o2) = read_uvarint(&self.data, off).ok_or_else(|| R5Error::Corrupt("postings delta".into()))?; off = o2;
+            let (d, o2) = read_uvarint(data, off).ok_or_else(|| R5Error::Corrupt("postings delta".into()))?; off = o2;
             cur = cur.checked_add(d).ok_or_else(|| R5Error::Corrupt("postings overflow".into()))?;
             out.push(cur);
         }
@@ -535,25 +551,26 @@ impl R5tuFile {
     }
 
     fn pair_lookup(&self, sec: Section, id_id: u32, gn_id: u32) -> Result<Option<u64>> {
-        let b = &self.data[sec.off as usize .. (sec.off + sec.len) as usize];
+        let data = self.bytes();
+        let b = &data[sec.off as usize .. (sec.off + sec.len) as usize];
         if b.len() < 16 { return Err(R5Error::Corrupt("pair idx short".into())); }
         let n_pairs = u64::from_le_bytes(b[0..8].try_into().unwrap()) as usize;
         let pairs_off = u64::from_le_bytes(b[8..16].try_into().unwrap()) as usize;
         let entry_size = 16usize;
-        if pairs_off + n_pairs * entry_size > self.data.len() { return Err(R5Error::Corrupt("pairs OOB".into())); }
+        if pairs_off + n_pairs * entry_size > data.len() { return Err(R5Error::Corrupt("pairs OOB".into())); }
         let mut lo = 0usize;
         let mut hi = n_pairs;
         while lo < hi {
             let mid = (lo + hi) / 2;
             let off = pairs_off + mid * entry_size;
-            let mid_id = u32::from_le_bytes(self.data[off .. off + 4].try_into().unwrap());
-            let mid_gn = u32::from_le_bytes(self.data[off + 4 .. off + 8].try_into().unwrap());
+            let mid_id = u32::from_le_bytes(data[off .. off + 4].try_into().unwrap());
+            let mid_gn = u32::from_le_bytes(data[off + 4 .. off + 8].try_into().unwrap());
             use std::cmp::Ordering::*;
             match (mid_id, mid_gn).cmp(&(id_id, gn_id)) {
                 Less => lo = mid + 1,
                 Greater => hi = mid,
                 Equal => {
-                    let gid = u64::from_le_bytes(self.data[off + 8 .. off + 16].try_into().unwrap());
+                    let gid = u64::from_le_bytes(data[off + 8 .. off + 16].try_into().unwrap());
                     return Ok(Some(gid));
                 }
             }
@@ -605,24 +622,25 @@ impl Iterator for TripleIter {
 impl R5tuFile {
     fn decode_triple_block(&self, gid: u64) -> Result<TripleIter> {
         let row = self.gdir_row(gid)?;
+        let data = self.bytes();
         let base = row.triples_off as usize;
         let end = base.checked_add(row.triples_len as usize).ok_or_else(|| R5Error::Corrupt("block bounds".into()))?;
-        if end > self.data.len() { return Err(R5Error::Corrupt("block OOB".into())); }
+        if end > data.len() { return Err(R5Error::Corrupt("block OOB".into())); }
         if base + 1 + 4 > end { return Err(R5Error::Corrupt("block header short".into())); }
-        let enc = self.data[base];
-        let raw_len = u32::from_le_bytes(self.data[base + 1 .. base + 5].try_into().unwrap()) as usize;
+        let enc = data[base];
+        let raw_len = u32::from_le_bytes(data[base + 1 .. base + 5].try_into().unwrap()) as usize;
         let payload_start = base + 5;
         match enc {
             0 => {
                 if payload_start + raw_len > end { return Err(R5Error::Corrupt("raw len OOB".into())); }
-                let raw = &self.data[payload_start .. payload_start + raw_len];
+                let raw = &data[payload_start .. payload_start + raw_len];
                 self.decode_raw_payload(raw)
             }
             1 => {
                 #[cfg(feature = "zstd")]
                 {
                     if payload_start + raw_len > end { return Err(R5Error::Corrupt("zstd len OOB".into())); }
-                    let frame = &self.data[payload_start .. payload_start + raw_len];
+                    let frame = &data[payload_start .. payload_start + raw_len];
                     let raw = zstd::decode_all(std::io::Cursor::new(frame)).map_err(|_| R5Error::Corrupt("zstd decode".into()))?;
                     return self.decode_raw_payload(&raw);
                 }

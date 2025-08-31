@@ -1,9 +1,11 @@
-#![cfg(feature = "oxigraph")]
 use std::{fs::File, io::BufReader, path::PathBuf, time::Instant};
 use clap::{Parser, Subcommand, Args, ValueEnum};
 use rdf5d::{StreamingWriter, writer::{WriterOptions}, Term, Quint, R5tuFile};
+#[cfg(feature = "oxigraph")]
 use oxigraph::io::RdfFormat;
+#[cfg(feature = "oxigraph")]
 use oxigraph::store::Store;
+#[cfg(feature = "oxigraph")]
 use oxigraph::model::GraphNameRef;
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -78,8 +80,12 @@ struct StatArgs {
     graphname: Option<String>,
     #[arg(long = "list", default_value_t = false)]
     list: bool,
+    #[cfg(feature = "mmap")]
+    #[arg(long = "mmap", default_value_t = false)]
+    mmap: bool,
 }
 
+#[cfg(feature = "oxigraph")]
 fn infer_graph_rdf_format(ext: &str) -> Option<RdfFormat> {
     match ext.to_ascii_lowercase().as_str() {
         "nt" | "ntriples" => Some(RdfFormat::NTriples),
@@ -88,6 +94,7 @@ fn infer_graph_rdf_format(ext: &str) -> Option<RdfFormat> {
         _ => None,
     }
 }
+#[cfg(feature = "oxigraph")]
 fn infer_dataset_rdf_format(ext: &str) -> Option<RdfFormat> {
     match ext.to_ascii_lowercase().as_str() {
         "nq" | "nquads" => Some(RdfFormat::NQuads),
@@ -96,6 +103,7 @@ fn infer_dataset_rdf_format(ext: &str) -> Option<RdfFormat> {
     }
 }
 
+#[cfg(feature = "oxigraph")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     match cli.command {
@@ -114,7 +122,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Load into store via BulkLoader (explicit fast path)
                 let store = Store::new()?;
                 let loader = store.bulk_loader();
-                loader.load_graph(&mut rdr, rfmt, GraphNameRef::DefaultGraph, None)?;
+                loader.load_from_reader(rfmt, &mut rdr)?;
                 let gname_auto = rdf5d::writer::detect_graphname_from_store(&store).unwrap_or_else(|| args.graphname.clone().unwrap_or_else(|| "default".to_string()));
                 let id = args.id.clone().unwrap_or_else(|| input.to_string_lossy().to_string());
                 // Stream loaded triples from default graph into our writer
@@ -144,7 +152,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     None => infer_dataset_rdf_format(input.extension().and_then(|e| e.to_str()).unwrap_or("")).unwrap_or(RdfFormat::NQuads),
                 };
                 let store = Store::new()?;
-                store.load_dataset(&mut rdr, rfmt, None)?;
+                store.load_from_reader(rfmt, &mut rdr)?;
                 let id = args.id.clone().unwrap_or_else(|| input.to_string_lossy().to_string());
                 let mut n = 0usize;
                 for q in store.quads_for_pattern(None, None, None, None) {
@@ -162,7 +170,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::Stat(args) => {
             let file = args.file;
-            let f = match R5tuFile::open(&file) {
+            let f = match {
+                #[cfg(feature = "mmap")]
+                {
+                    if args.mmap { R5tuFile::open_mmap(&file) } else { R5tuFile::open(&file) }
+                }
+                #[cfg(not(feature = "mmap"))]
+                { R5tuFile::open(&file) }
+            } {
                 Ok(f) => f,
                 Err(e) => { eprintln!("stat: failed to open '{}': {}\nHint: Use 'build-graph' or 'build-dataset' to produce an .r5tu file first.", file.display(), e); std::process::exit(2); }
             };
@@ -193,4 +208,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+#[cfg(not(feature = "oxigraph"))]
+fn main() {
+    eprintln!("r5tu CLI requires the 'oxigraph' feature. Try: cargo run --features oxigraph --bin r5tu -- help");
 }
