@@ -1,20 +1,28 @@
-use rdf5d::{writer::{write_file, Quint, Term}, reader::R5tuFile};
+use rdf5d::{
+    reader::R5tuFile,
+    writer::{Quint, Term, write_file},
+};
 
 #[test]
 fn detects_global_crc_mismatch() {
-    let q = Quint{
+    let q = Quint {
         id: "X".into(),
         s: Term::Iri("http://ex/s".into()),
         p: Term::Iri("http://ex/p".into()),
-        o: Term::Literal{ lex: "v".into(), dt: None, lang: None },
+        o: Term::Literal {
+            lex: "v".into(),
+            dt: None,
+            lang: None,
+        },
         gname: "g".into(),
     };
-    let mut path = std::env::temp_dir(); path.push("crc_bad.r5tu");
+    let mut path = std::env::temp_dir();
+    path.push("crc_bad.r5tu");
     write_file(&path, &[q]).unwrap();
 
     // Corrupt a byte in the middle of the file (but not the header magic)
     let mut bytes = std::fs::read(&path).unwrap();
-    let pos = 40.min(bytes.len()-17); // before footer
+    let pos = 40.min(bytes.len() - 17); // before footer
     bytes[pos] ^= 0xFF; // flip
     std::fs::write(&path, &bytes).unwrap();
 
@@ -25,4 +33,3 @@ fn detects_global_crc_mismatch() {
         _ => panic!("expected CRC mismatch error"),
     }
 }
-

@@ -120,10 +120,16 @@ pub fn parse_toc(buf: &[u8], hdr: &Header) -> Option<Vec<TocEntry>> {
         ]);
 
         // crc32_u32 at off+20..24 (optional), reserved_u32 off+24..28 (ignored here)
-        let crc32_u32 = u32::from_le_bytes([
-            buf[off + 20], buf[off + 21], buf[off + 22], buf[off + 23],
-        ]);
-        out.push(TocEntry { kind, section: Section { off: off_u64, len: len_u64 }, crc32_u32 });
+        let crc32_u32 =
+            u32::from_le_bytes([buf[off + 20], buf[off + 21], buf[off + 22], buf[off + 23]]);
+        out.push(TocEntry {
+            kind,
+            section: Section {
+                off: off_u64,
+                len: len_u64,
+            },
+            crc32_u32,
+        });
     }
     Some(out)
 }
@@ -141,18 +147,25 @@ pub fn crc32_ieee(data: &[u8]) -> u32 {
         for _ in 0..8 {
             let lsb = x & 1;
             x >>= 1;
-            if lsb != 0 { x ^= 0xEDB88320; }
+            if lsb != 0 {
+                x ^= 0xEDB88320;
+            }
         }
         crc = (crc >> 8) ^ x;
     }
     crc ^ 0xFFFF_FFFF
 }
 
-pub fn parse_footer(buf: &[u8]) -> Option<(u32, [u8;12])> {
-    if buf.len() < 16 { return None; }
+pub fn parse_footer(buf: &[u8]) -> Option<(u32, [u8; 12])> {
+    if buf.len() < 16 {
+        return None;
+    }
     let base = buf.len() - 16;
-    let mut magic = [0u8;12]; magic.copy_from_slice(&buf[base+4..base+16]);
-    if &magic != b"R5TU_ENDMARK" { return None; }
-    let crc = u32::from_le_bytes([buf[base], buf[base+1], buf[base+2], buf[base+3]]);
+    let mut magic = [0u8; 12];
+    magic.copy_from_slice(&buf[base + 4..base + 16]);
+    if &magic != b"R5TU_ENDMARK" {
+        return None;
+    }
+    let crc = u32::from_le_bytes([buf[base], buf[base + 1], buf[base + 2], buf[base + 3]]);
     Some((crc, magic))
 }

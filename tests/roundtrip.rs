@@ -1,4 +1,7 @@
-use rdf5d::{reader::R5tuFile, writer::{write_file, Quint, Term}};
+use rdf5d::{
+    reader::R5tuFile,
+    writer::{Quint, Term, write_file},
+};
 
 #[test]
 fn writer_reader_roundtrip_two_graphs() {
@@ -9,16 +12,43 @@ fn writer_reader_roundtrip_two_graphs() {
     let s2 = Term::Iri("http://ex/s2".into());
     let p1 = Term::Iri("http://ex/p1".into());
     let p2 = Term::Iri("http://ex/p2".into());
-    let o1 = Term::Literal { lex: "v1".into(), dt: None, lang: None };
-    let o2 = Term::Literal { lex: "v2".into(), dt: None, lang: Some("en".into()) };
+    let o1 = Term::Literal {
+        lex: "v1".into(),
+        dt: None,
+        lang: None,
+    };
+    let o2 = Term::Literal {
+        lex: "v2".into(),
+        dt: None,
+        lang: Some("en".into()),
+    };
     let o3 = Term::BNode("_:b3".into());
 
     let mut quints = Vec::new();
-    quints.push(Quint{ id: "src/A".into(), s: s1.clone(), p: p1.clone(), o: o1.clone(), gname: "g".into()});
-    quints.push(Quint{ id: "src/A".into(), s: s1.clone(), p: p2.clone(), o: o2.clone(), gname: "g".into()});
-    quints.push(Quint{ id: "src/B".into(), s: s2.clone(), p: p1.clone(), o: o3.clone(), gname: "g".into()});
+    quints.push(Quint {
+        id: "src/A".into(),
+        s: s1.clone(),
+        p: p1.clone(),
+        o: o1.clone(),
+        gname: "g".into(),
+    });
+    quints.push(Quint {
+        id: "src/A".into(),
+        s: s1.clone(),
+        p: p2.clone(),
+        o: o2.clone(),
+        gname: "g".into(),
+    });
+    quints.push(Quint {
+        id: "src/B".into(),
+        s: s2.clone(),
+        p: p1.clone(),
+        o: o3.clone(),
+        gname: "g".into(),
+    });
 
-    let mut path = std::env::temp_dir(); path.push("roundtrip.r5tu");
+    let mut path = std::env::temp_dir();
+    path.push("roundtrip.r5tu");
     write_file(&path, &quints).expect("write");
 
     let f = R5tuFile::open(&path).expect("open");
@@ -35,10 +65,10 @@ fn writer_reader_roundtrip_two_graphs() {
     assert!(w.iter().any(|gr| gr.id == "src/B"));
 
     // resolve_gid("src/B","g")
-    let gr = f.resolve_gid("src/B","g").expect("resolve").expect("some");
+    let gr = f.resolve_gid("src/B", "g").expect("resolve").expect("some");
     let triples: Vec<_> = f.triples_ids(gr.gid).expect("triples").collect();
     assert_eq!(triples.len(), 1);
-    let (s,p,o) = triples[0];
+    let (s, p, o) = triples[0];
     // term_to_string reproduces
     let ss = f.term_to_string(s).expect("s");
     let pp = f.term_to_string(p).expect("p");
@@ -49,4 +79,3 @@ fn writer_reader_roundtrip_two_graphs() {
 
     let _ = std::fs::remove_file(&path);
 }
-
