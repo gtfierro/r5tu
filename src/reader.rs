@@ -1,13 +1,37 @@
+//! Reader for R5TU files: open, inspect sections, and iterate triples.
+//!
+//! The primary entry point is [`R5tuFile`]. Use it to open a `.r5tu`
+//! file and query logical graph groups by dataset id and graph name.
+//! See `ARCH.md` §4 for query semantics and identifiers.
+//!
+//! Basic example
+//!
+//! ```no_run
+//! use rdf5d::R5tuFile;
+//! use std::path::Path;
+//!
+//! let f = R5tuFile::open(Path::new("example.r5tu")).expect("open");
+//! if let Some(gr) = f.resolve_gid("dataset:1", "http://example.org/graph").unwrap() {
+//!     let mut n = 0u64;
+//!     for (s, p, o) in f.triples_ids(gr.gid).unwrap() { n += 1; }
+//!     assert_eq!(n, gr.n_triples);
+//! }
+//! ```
+
 use std::{fmt, fs, path::Path};
 
 use crate::header::{
     Header, Section, SectionKind, TocEntry, crc32_ieee, parse_footer, parse_toc, section_in_bounds,
 };
 
+/// Errors that can arise when parsing or validating an R5TU file.
 #[derive(Debug)]
 pub enum R5Error {
+    /// Underlying I/O error.
     Io(std::io::Error),
+    /// Structural problem with inputs or unsupported feature.
     Invalid(&'static str),
+    /// The file failed an integrity or bounds check.
     Corrupt(String),
 }
 
@@ -29,11 +53,16 @@ impl From<std::io::Error> for R5Error {
 
 pub type Result<T> = std::result::Result<T, R5Error>;
 
+/// Lightweight description of a logical graph group inside an R5TU file.
 #[derive(Debug, Clone)]
 pub struct GraphRef {
+    /// Stable group id within the file.
     pub gid: u64,
+    /// Dataset identifier (id) for the group (as stored in the id dictionary).
     pub id: String,
+    /// Graph name (as stored in the graph name dictionary).
     pub graphname: String,
+    /// Number of triples in this group.
     pub n_triples: u64,
 }
 
@@ -54,6 +83,7 @@ impl Backing {
     }
 }
 
+/// Opened R5TU file. Provides lookups and triple iteration.
 #[derive(Debug)]
 pub struct R5tuFile {
     backing: Backing,
@@ -76,6 +106,10 @@ impl R5tuFile {
     fn bytes(&self) -> &[u8] {
         self.backing.as_bytes()
     }
+    /// Open and validate an R5TU file from disk.
+    ///
+    /// Performs bounds checks, TOC validation, and optional section/global CRCs.
+    /// Returns a handle capable of dictionary lookups and triple iteration.
     pub fn open(path: &Path) -> Result<Self> {
         let data = fs::read(path)?;
         let header = Header::parse(&data).ok_or(R5Error::Invalid("short or invalid header"))?;
@@ -164,6 +198,9 @@ impl R5tuFile {
     }
 
     #[cfg(feature = "mmap")]
+    /// Open and validate an R5TU file using `memmap2` for zero‑copy access.
+    ///
+    /// Enabled with the `mmap` feature.
     pub fn open_mmap(path: &Path) -> Result<Self> {
         use std::fs::File;
         let f = File::open(path)?;
@@ -239,30 +276,36 @@ impl R5tuFile {
         })
     }
 
+    /// Returns the parsed file header.
     pub fn header(&self) -> &Header {
         &self.header
     }
+    /// Returns the parsed table of contents (TOC).
     pub fn toc(&self) -> &[TocEntry] {
         &self.toc
     }
 
+    /// Finds a section by kind and returns its byte span, if present.
     pub fn section(&self, kind: SectionKind) -> Option<Section> {
         self.toc.iter().find(|e| e.kind == kind).map(|e| e.section)
     }
 
     // API placeholders per ARCH.md §4.1
+    /// Enumerate graph groups with a matching dataset id string.
     pub fn enumerate_by_id(&self, id: &str) -> Result<Vec<GraphRef>> {
         let Some(id_id) = self.id_dict.find_id(self.bytes(), id) else {
             return Ok(Vec::new());
         };
         self.postings_to_graphrefs(self.idx_id2gid, id_id as usize)
     }
+    /// Enumerate graph groups with a matching graph name string.
     pub fn enumerate_by_graphname(&self, gname: &str) -> Result<Vec<GraphRef>> {
         let Some(gn_id) = self.gname_dict.find_id(self.bytes(), gname) else {
             return Ok(Vec::new());
         };
         self.postings_to_graphrefs(self.idx_gname2gid, gn_id as usize)
     }
+    /// Resolve a (id, graphname) pair to a single group, if it exists.
     pub fn resolve_gid(&self, id: &str, gname: &str) -> Result<Option<GraphRef>> {
         let id_id = match self.id_dict.find_id(self.bytes(), id) {
             Some(v) => v,
@@ -278,9 +321,13 @@ impl R5tuFile {
         }
         Ok(None)
     }
+    /// Iterate over triples (S, P, O) as term ids for the given `gid`.
+    ///
+    /// Convert term ids to strings with [`Self::term_to_string`].
     pub fn triples_ids(&self, gid: u64) -> Result<TripleIter> {
         self.decode_triple_block(gid)
     }
+    /// Resolve a term id to a displayable string (IRI, bnode, or literal).
     pub fn term_to_string(&self, term_id: u64) -> Result<String> {
         self.term_dict.term_to_string(self.bytes(), term_id)
     }

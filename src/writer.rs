@@ -12,10 +12,14 @@ type GroupsMap = BTreeMap<GroupKey, Vec<TripleIds>>;
 type GidRow = (u32, u32, Section, u64, u32, u32, u32);
 type PairEntry = (u32, u32, u64);
 
+/// RDF term used by the writer when constructing quads.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Term {
+    /// IRI/URI node.
     Iri(String),
+    /// Blank node label (with or without `_:` prefix).
     BNode(String),
+    /// Literal with optional datatype or language tag.
     Literal {
         lex: String,
         dt: Option<String>,
@@ -23,12 +27,18 @@ pub enum Term {
     },
 }
 
+/// 5‑tuple (id, s, p, o, gname) used to build an R5TU file.
 #[derive(Debug, Clone)]
 pub struct Quint {
+    /// Dataset identifier for grouping.
     pub id: String,
+    /// Subject term.
     pub s: Term,
+    /// Predicate term.
     pub p: Term,
+    /// Object term.
     pub o: Term,
+    /// Graph name for grouping.
     pub gname: String,
 }
 
@@ -46,12 +56,31 @@ fn push_uvarint(mut v: u64, out: &mut Vec<u8>) {
     }
 }
 
+/// Options controlling file emission.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct WriterOptions {
+    /// Compress triple blocks using zstd (requires `zstd` feature).
     pub zstd: bool,
+    /// Compute and embed per‑section CRCs (TOC) and a global footer CRC.
     pub with_crc: bool,
 }
 
+/// Convenience helper to write a `.r5tu` file with defaults.
+///
+/// - `zstd = false`
+/// - `with_crc = true`
+///
+/// ```no_run
+/// use rdf5d::{write_file, Quint, Term};
+/// let q = Quint {
+///     id: "dataset:1".into(),
+///     s: Term::Iri("http://example.org/Alice".into()),
+///     p: Term::Iri("http://xmlns.com/foaf/0.1/name".into()),
+///     o: Term::Literal { lex: "Alice".into(), dt: None, lang: None },
+///     gname: "http://example.org/graph".into(),
+/// };
+/// write_file("example.r5tu", &[q]).unwrap();
+/// ```
 pub fn write_file<P: AsRef<Path>>(path: P, quads: &[Quint]) -> Result<()> {
     write_file_with_options(
         path,
@@ -63,6 +92,7 @@ pub fn write_file<P: AsRef<Path>>(path: P, quads: &[Quint]) -> Result<()> {
     )
 }
 
+/// Write a `.r5tu` file with explicit [`WriterOptions`].
 pub fn write_file_with_options<P: AsRef<Path>>(
     path: P,
     quads: &[Quint],
@@ -304,6 +334,10 @@ pub fn write_file_with_options<P: AsRef<Path>>(
 }
 
 // ---------------- Streaming writer ----------------
+/// Incremental builder for large datasets.
+///
+/// Use [`StreamingWriter::add`] to append quads, then [`StreamingWriter::finalize`]
+/// to write the file atomically.
 #[derive(Debug)]
 pub struct StreamingWriter {
     opts: WriterOptions,
@@ -318,6 +352,7 @@ pub struct StreamingWriter {
 }
 
 impl StreamingWriter {
+    /// Create a streaming writer targeting `path` with `opts`.
     pub fn new<P: Into<PathBuf>>(path: P, opts: WriterOptions) -> Self {
         Self {
             opts,
@@ -360,6 +395,7 @@ impl StreamingWriter {
         v
     }
 
+    /// Add one 5‑tuple to the in‑memory builder.
     pub fn add(&mut self, q: Quint) -> Result<()> {
         let id_id = self.intern_id(&q.id);
         let gn_id = self.intern_gn(&q.gname);
@@ -373,6 +409,7 @@ impl StreamingWriter {
         Ok(())
     }
 
+    /// Finish building and write the file to disk.
     pub fn finalize(mut self) -> Result<()> {
         // Ensure per-group SPO sort
         for v in self.groups.values_mut() {

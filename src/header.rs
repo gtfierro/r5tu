@@ -1,5 +1,6 @@
 //! Header, TOC, and section kinds for R5TU files (ARCH.md §1).
 
+/// Enumerates the kinds of sections in an R5TU file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u16)]
 pub enum SectionKind {
@@ -14,6 +15,7 @@ pub enum SectionKind {
 }
 
 impl SectionKind {
+    /// Convert a little‑endian `u16` value into a kind, if recognized.
     pub fn from_u16(v: u16) -> Option<Self> {
         use SectionKind::*;
         Some(match v {
@@ -30,12 +32,14 @@ impl SectionKind {
     }
 }
 
+/// Byte span for a section.
 #[derive(Debug, Clone, Copy)]
 pub struct Section {
     pub off: u64,
     pub len: u64,
 }
 
+/// Entry in the table of contents mapping a kind to its section.
 #[derive(Debug, Clone, Copy)]
 pub struct TocEntry {
     pub kind: SectionKind,
@@ -43,6 +47,7 @@ pub struct TocEntry {
     pub crc32_u32: u32, // 0 if absent
 }
 
+/// Parsed fixed‑size file header.
 #[derive(Debug, Clone, Copy)]
 pub struct Header {
     pub magic: [u8; 4],
@@ -55,6 +60,7 @@ pub struct Header {
 }
 
 impl Header {
+    /// Parse a header from the first 32 bytes of `buf`.
     pub fn parse(buf: &[u8]) -> Option<Self> {
         if buf.len() < 32 {
             return None;
@@ -83,6 +89,7 @@ impl Header {
     }
 }
 
+/// Parse the TOC entries referenced by `hdr`.
 pub fn parse_toc(buf: &[u8], hdr: &Header) -> Option<Vec<TocEntry>> {
     // Each entry is 32 bytes; TOC starts at hdr.toc_off_u64
     let toc_off = hdr.toc_off_u64 as usize;
@@ -134,12 +141,14 @@ pub fn parse_toc(buf: &[u8], hdr: &Header) -> Option<Vec<TocEntry>> {
     Some(out)
 }
 
+/// True if `section` lies entirely within a buffer of `buf_len` bytes.
 pub fn section_in_bounds(buf_len: usize, section: Section) -> bool {
     let start = section.off as usize;
     let len = section.len as usize;
     start <= buf_len && start.saturating_add(len) <= buf_len
 }
 
+/// Compute IEEE CRC‑32.
 pub fn crc32_ieee(data: &[u8]) -> u32 {
     let mut crc: u32 = 0xFFFF_FFFF;
     for &b in data {
@@ -156,6 +165,7 @@ pub fn crc32_ieee(data: &[u8]) -> u32 {
     crc ^ 0xFFFF_FFFF
 }
 
+/// Parse the optional 16‑byte footer containing the global CRC and magic.
 pub fn parse_footer(buf: &[u8]) -> Option<(u32, [u8; 12])> {
     if buf.len() < 16 {
         return None;
