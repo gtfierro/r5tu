@@ -2,6 +2,11 @@
 name = "rdf5d"
 version = "0.1.0"
 edition = "2024"
+authors = ["Gabe Fierro <gtfierro@mines.edu>"]
+license = "BSD-3-Clause"
+repository = "https://github.com/gtfierro/r5tu"
+homepage = "https://github.com/gtfierro/r5tu"
+readme = "README.md"
 
 [dependencies]
 
