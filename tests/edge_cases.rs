@@ -16,7 +16,7 @@ fn empty_input_produces_valid_file() {
     let quints: Vec<Quint> = Vec::new();
     write_file(&path, &quints).expect("write empty");
     let f = R5tuFile::open(&path).expect("open");
-    assert_eq!(f.toc().len() > 0, true); // has sections
+    assert!(!f.toc().is_empty()); // has sections
     // Enumerations yield empty
     assert!(f.enumerate_by_graphname("g").unwrap().is_empty());
     let _ = std::fs::remove_file(&path);
@@ -34,7 +34,7 @@ fn streaming_empty_finalize() {
     );
     w.finalize().expect("finalize empty");
     let f = R5tuFile::open(&path).expect("open");
-    assert!(f.toc().len() > 0);
+    assert!(!f.toc().is_empty());
     let _ = std::fs::remove_file(&path);
 }
 

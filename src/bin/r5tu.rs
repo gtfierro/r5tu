@@ -5,12 +5,17 @@ use oxigraph::io::RdfFormat;
 use oxigraph::model::GraphNameRef;
 #[cfg(feature = "oxigraph")]
 use oxigraph::store::Store;
+#[cfg(feature = "oxigraph")]
 use std::fs::File;
+#[cfg(feature = "oxigraph")]
 use std::io::BufReader;
 use std::path::PathBuf;
+#[cfg(feature = "oxigraph")]
 use std::time::Instant;
 
+#[cfg(feature = "oxigraph")]
 use rdf5d::writer::WriterOptions;
+#[cfg(feature = "oxigraph")]
 use rdf5d::{Quint, R5tuFile, StreamingWriter, Term};
 
 #[derive(Clone, Copy, ValueEnum)]

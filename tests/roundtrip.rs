@@ -24,28 +24,29 @@ fn writer_reader_roundtrip_two_graphs() {
     };
     let o3 = Term::BNode("_:b3".into());
 
-    let mut quints = Vec::new();
-    quints.push(Quint {
-        id: "src/A".into(),
-        s: s1.clone(),
-        p: p1.clone(),
-        o: o1.clone(),
-        gname: "g".into(),
-    });
-    quints.push(Quint {
-        id: "src/A".into(),
-        s: s1.clone(),
-        p: p2.clone(),
-        o: o2.clone(),
-        gname: "g".into(),
-    });
-    quints.push(Quint {
-        id: "src/B".into(),
-        s: s2.clone(),
-        p: p1.clone(),
-        o: o3.clone(),
-        gname: "g".into(),
-    });
+    let quints = vec![
+        Quint {
+            id: "src/A".into(),
+            s: s1.clone(),
+            p: p1.clone(),
+            o: o1.clone(),
+            gname: "g".into(),
+        },
+        Quint {
+            id: "src/A".into(),
+            s: s1.clone(),
+            p: p2.clone(),
+            o: o2.clone(),
+            gname: "g".into(),
+        },
+        Quint {
+            id: "src/B".into(),
+            s: s2.clone(),
+            p: p1.clone(),
+            o: o3.clone(),
+            gname: "g".into(),
+        },
+    ];
 
     let mut path = std::env::temp_dir();
     path.push("roundtrip.r5tu");
