@@ -6,6 +6,7 @@ authors = ["Gabe Fierro <gtfierro@mines.edu>"]
 license = "BSD-3-Clause"
 repository = "https://github.com/gtfierro/r5tu"
 homepage = "https://github.com/gtfierro/r5tu"
+description = "Compact, mmap‑friendly on‑disk format for RDF 5‑tuples"
 readme = "README.md"
 
 [dependencies]
