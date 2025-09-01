@@ -5,8 +5,7 @@ use oxigraph::io::RdfFormat;
 use oxigraph::model::GraphNameRef;
 #[cfg(feature = "oxigraph")]
 use oxigraph::store::Store;
-use rdf5d::{Quint, R5tuFile, StreamingWriter, Term, writer::WriterOptions};
-use std::{fs::File, io::BufReader, path::PathBuf, time::Instant};
+use std::path::PathBuf;
 
 #[derive(Clone, Copy, ValueEnum)]
 enum GraphFmt {

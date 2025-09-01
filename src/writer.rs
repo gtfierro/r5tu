@@ -202,8 +202,8 @@ pub fn write_file_with_options<P: AsRef<Path>>(
     for (id_id, gn_id, sec, n_triples, n_s, n_p, n_o) in &gid_rows {
         file.extend_from_slice(&id_id.to_le_bytes());
         file.extend_from_slice(&gn_id.to_le_bytes());
-        file.extend_from_slice(&(sec.off as u64).to_le_bytes());
-        file.extend_from_slice(&(sec.len as u64).to_le_bytes());
+        file.extend_from_slice(&sec.off.to_le_bytes());
+        file.extend_from_slice(&sec.len.to_le_bytes());
         file.extend_from_slice(&n_triples.to_le_bytes());
         file.extend_from_slice(&n_s.to_le_bytes());
         file.extend_from_slice(&n_p.to_le_bytes());
@@ -260,8 +260,8 @@ pub fn write_file_with_options<P: AsRef<Path>>(
         let kind = e.kind as u16;
         ent[0..2].copy_from_slice(&kind.to_le_bytes());
         // reserved_u16 zero
-        ent[4..12].copy_from_slice(&(e.section.off as u64).to_le_bytes());
-        ent[12..20].copy_from_slice(&(e.section.len as u64).to_le_bytes());
+        ent[4..12].copy_from_slice(&e.section.off.to_le_bytes());
+        ent[12..20].copy_from_slice(&e.section.len.to_le_bytes());
         if opts.with_crc {
             let start = e.section.off as usize;
             let end = start + e.section.len as usize;
@@ -446,8 +446,8 @@ impl StreamingWriter {
         for (id_id, gn_id, sec, n_triples, n_s, n_p, n_o) in &gid_rows {
             file.extend_from_slice(&id_id.to_le_bytes());
             file.extend_from_slice(&gn_id.to_le_bytes());
-            file.extend_from_slice(&(sec.off as u64).to_le_bytes());
-            file.extend_from_slice(&(sec.len as u64).to_le_bytes());
+            file.extend_from_slice(&sec.off.to_le_bytes());
+            file.extend_from_slice(&sec.len.to_le_bytes());
             file.extend_from_slice(&n_triples.to_le_bytes());
             file.extend_from_slice(&n_s.to_le_bytes());
             file.extend_from_slice(&n_p.to_le_bytes());
@@ -500,8 +500,8 @@ impl StreamingWriter {
             let mut ent = [0u8; 32];
             let kind = e.kind as u16;
             ent[0..2].copy_from_slice(&kind.to_le_bytes());
-            ent[4..12].copy_from_slice(&(e.section.off as u64).to_le_bytes());
-            ent[12..20].copy_from_slice(&(e.section.len as u64).to_le_bytes());
+            ent[4..12].copy_from_slice(&e.section.off.to_le_bytes());
+            ent[12..20].copy_from_slice(&e.section.len.to_le_bytes());
             if self.opts.with_crc {
                 let start = e.section.off as usize;
                 let end = start + e.section.len as usize;

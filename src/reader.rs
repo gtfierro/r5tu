@@ -123,7 +123,7 @@ impl R5tuFile {
         let need = |k: SectionKind| -> Result<Section> {
             parse_toc(&data, &header)
                 .and_then(|t| t.into_iter().find(|e| e.kind == k).map(|e| e.section))
-                .ok_or_else(|| R5Error::Invalid("missing required section"))
+                .ok_or(R5Error::Invalid("missing required section"))
         };
         let id_sec = need(SectionKind::IdDict)?;
         let gn_sec = need(SectionKind::GNameDict)?;
@@ -267,11 +267,11 @@ impl R5tuFile {
         let id_id = match self.id_dict.find_id(self.bytes(), id) {
             Some(v) => v,
             None => return Ok(None),
-        } as u32;
+        };
         let gn_id = match self.gname_dict.find_id(self.bytes(), gname) {
             Some(v) => v,
             None => return Ok(None),
-        } as u32;
+        };
         if let Some(gid) = self.pair_lookup(self.idx_pair2gid, id_id, gn_id)? {
             let gr = self.graphref_for_gid(gid)?;
             return Ok(Some(gr));
@@ -416,11 +416,10 @@ impl Dict {
         if !section_in_bounds(data.len(), blob) || !section_in_bounds(data.len(), offs) {
             return Err(R5Error::Corrupt("dict blob/offs OOB".into()));
         }
-        if let Some(s) = idx {
-            if !section_in_bounds(data.len(), s) {
+        if let Some(s) = idx
+            && !section_in_bounds(data.len(), s) {
                 return Err(R5Error::Corrupt("dict index OOB".into()));
             }
-        }
         Ok(Dict {
             sec,
             n,
@@ -483,11 +482,10 @@ impl Dict {
                             let id = u32::from_le_bytes(
                                 data[ib + m * 24 + 16..ib + m * 24 + 20].try_into().ok()?,
                             );
-                            if let Some(ss) = self.get(data, id) {
-                                if ss == s {
+                            if let Some(ss) = self.get(data, id)
+                                && ss == s {
                                     return Some(id);
                                 }
-                            }
                             m += 1;
                         }
                         return None;
@@ -498,11 +496,10 @@ impl Dict {
         } else {
             // fallback linear search
             for i in 0..self.n {
-                if let Some(ss) = self.get(data, i) {
-                    if ss == s {
+                if let Some(ss) = self.get(data, i)
+                    && ss == s {
                         return Some(i);
                     }
-                }
             }
             None
         }
@@ -1037,7 +1034,7 @@ impl R5tuFile {
                 }
                 #[cfg(not(feature = "zstd"))]
                 {
-                    return Err(R5Error::Invalid("zstd feature not enabled"));
+                    Err(R5Error::Invalid("zstd feature not enabled"))
                 }
             }
             _ => Err(R5Error::Corrupt("unknown block encoding".into())),
