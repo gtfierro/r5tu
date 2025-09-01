@@ -81,8 +81,8 @@ struct StatArgs {
     #[arg(long = "list", default_value_t = false)]
     list: bool,
     #[cfg(feature = "mmap")]
-    #[arg(long = "mmap", default_value_t = false)]
-    mmap: bool,
+    #[arg(long = "no-mmap", default_value_t = false, help = "Disable mmap and read into memory")]
+    no_mmap: bool,
 }
 
 #[cfg(feature = "oxigraph")]
@@ -173,7 +173,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let f = match {
                 #[cfg(feature = "mmap")]
                 {
-                    if args.mmap { R5tuFile::open_mmap(&file) } else { R5tuFile::open(&file) }
+                    if args.no_mmap { R5tuFile::open(&file) } else { R5tuFile::open_mmap(&file) }
                 }
                 #[cfg(not(feature = "mmap"))]
                 { R5tuFile::open(&file) }

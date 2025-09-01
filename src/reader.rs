@@ -36,8 +36,25 @@ pub struct GraphRef {
 }
 
 #[derive(Debug)]
+enum Backing {
+    Owned(Vec<u8>),
+    #[cfg(feature = "mmap")]
+    Mmap(memmap2::Mmap),
+}
+
+impl Backing {
+    fn as_bytes(&self) -> &[u8] {
+        match self {
+            Backing::Owned(v) => v.as_slice(),
+            #[cfg(feature = "mmap")]
+            Backing::Mmap(m) => m,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct R5tuFile {
-    data: Vec<u8>,
+    backing: Backing,
     header: Header,
     toc: Vec<TocEntry>,
     // sections
@@ -54,7 +71,7 @@ pub struct R5tuFile {
 
 impl R5tuFile {
     #[inline]
-    fn bytes(&self) -> &[u8] { &self.data }
+    fn bytes(&self) -> &[u8] { self.backing.as_bytes() }
     pub fn open(path: &Path) -> Result<Self> {
         let data = fs::read(path)?;
         let header = Header::parse(&data).ok_or(R5Error::Invalid("short or invalid header"))?;
@@ -112,14 +129,50 @@ impl R5tuFile {
             let got = crc32_ieee(&data[..data.len()-16]);
             if got != footer_crc { return Err(R5Error::Corrupt("global CRC mismatch".into())); }
         }
-        Ok(Self { data, header, toc, id_dict, gname_dict, term_dict, gdir, idx_id2gid, idx_gname2gid, idx_pair2gid, triple_blocks })
+        Ok(Self { backing: Backing::Owned(data), header, toc, id_dict, gname_dict, term_dict, gdir, idx_id2gid, idx_gname2gid, idx_pair2gid, triple_blocks })
     }
 
     #[cfg(feature = "mmap")]
     pub fn open_mmap(path: &Path) -> Result<Self> {
-        // Temporarily reuse the same validated load path; backing refactor can switch this
-        // to a real memory map without API changes.
-        Self::open(path)
+        use std::fs::File;
+        let f = File::open(path)?;
+        let mmap = unsafe { memmap2::MmapOptions::new().map(&f) }.map_err(R5Error::Io)?;
+        let data: &[u8] = &mmap;
+        let header = Header::parse(data).ok_or(R5Error::Invalid("short or invalid header"))?;
+        if &header.magic != b"R5TU" { return Err(R5Error::Invalid("bad magic")); }
+        if header.toc_off_u64 as usize > data.len() { return Err(R5Error::Corrupt("TOC offset out of bounds".into())); }
+        let toc = parse_toc(data, &header).ok_or_else(|| R5Error::Corrupt("TOC parse failed".into()))?;
+        for e in &toc {
+            if !section_in_bounds(data.len(), e.section) { return Err(R5Error::Corrupt(format!("section {:?} out of bounds", e.kind))); }
+            if e.crc32_u32 != 0 {
+                let start = e.section.off as usize; let end = start + e.section.len as usize;
+                if end > data.len() { return Err(R5Error::Corrupt("section crc OOB".into())); }
+                let got = crc32_ieee(&data[start..end]); if got != e.crc32_u32 { return Err(R5Error::Corrupt("section CRC mismatch".into())); }
+            }
+        }
+        // Resolve sections
+        let need = |k: SectionKind| -> Result<Section> {
+            parse_toc(data, &header)
+                .and_then(|t| t.into_iter().find(|e| e.kind == k).map(|e| e.section))
+                .ok_or_else(|| R5Error::Invalid("missing required section"))
+        };
+        let id_sec = need(SectionKind::IdDict)?;
+        let gn_sec = need(SectionKind::GNameDict)?;
+        let term_sec = need(SectionKind::TermDict)?;
+        let gdir = need(SectionKind::GDir)?;
+        let idx_id2gid = need(SectionKind::IdxId2Gid)?;
+        let idx_gname2gid = need(SectionKind::IdxGName2Gid)?;
+        let idx_pair2gid = need(SectionKind::IdxPair2Gid)?;
+        let triple_blocks = need(SectionKind::TripleBlocks)?;
+        // Footer/global CRC if present
+        if let Some((footer_crc, magic)) = parse_footer(data) {
+            if &magic != b"R5TU_ENDMARK" { return Err(R5Error::Corrupt("bad footer magic".into())); }
+            let got = crc32_ieee(&data[..data.len()-16]); if got != footer_crc { return Err(R5Error::Corrupt("global CRC mismatch".into())); }
+        }
+        let id_dict = Dict::parse(data, id_sec)?;
+        let gname_dict = Dict::parse(data, gn_sec)?;
+        let term_dict = TermDict::parse(data, term_sec)?;
+        Ok(Self { backing: Backing::Mmap(mmap), header, toc, id_dict, gname_dict, term_dict, gdir, idx_id2gid, idx_gname2gid, idx_pair2gid, triple_blocks })
     }
 
     pub fn header(&self) -> &Header { &self.header }
@@ -522,7 +575,8 @@ impl R5tuFile {
     }
 
     fn decode_posting_list(&self, sec: Section, key_ordinal: usize) -> Result<Vec<u64>> {
-        let b = &self.data[sec.off as usize .. (sec.off + sec.len) as usize];
+        let data_all = self.bytes();
+        let b = &data_all[sec.off as usize .. (sec.off + sec.len) as usize];
         if b.len() < 24 { return Err(R5Error::Corrupt("postings header short".into())); }
         let n_keys = u64::from_le_bytes(b[0..8].try_into().unwrap()) as usize;
         if key_ordinal >= n_keys { return Ok(vec![]); }

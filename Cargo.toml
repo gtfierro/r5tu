@@ -1,0 +1,28 @@
+[package]
+name = "rdf5d"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+[features]
+default = []
+zstd = ["dep:zstd"]
+oxigraph = ["dep:oxigraph"]
+mmap = ["dep:memmap2"]
+
+[dependencies.zstd]
+version = "0.13"
+optional = true
+
+[dependencies.oxigraph]
+version = "0.4"
+optional = true
+
+[dependencies.memmap2]
+version = "0.9"
+optional = true
+
+[dependencies.clap]
+version = "4"
+features = ["derive"]
