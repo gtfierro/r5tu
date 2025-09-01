@@ -201,7 +201,7 @@ impl R5tuFile {
         let need = |k: SectionKind| -> Result<Section> {
             parse_toc(data, &header)
                 .and_then(|t| t.into_iter().find(|e| e.kind == k).map(|e| e.section))
-                .ok_or_else(|| R5Error::Invalid("missing required section"))
+                .ok_or(R5Error::Invalid("missing required section"))
         };
         let id_sec = need(SectionKind::IdDict)?;
         let gn_sec = need(SectionKind::GNameDict)?;
@@ -417,9 +417,10 @@ impl Dict {
             return Err(R5Error::Corrupt("dict blob/offs OOB".into()));
         }
         if let Some(s) = idx
-            && !section_in_bounds(data.len(), s) {
-                return Err(R5Error::Corrupt("dict index OOB".into()));
-            }
+            && !section_in_bounds(data.len(), s)
+        {
+            return Err(R5Error::Corrupt("dict index OOB".into()));
+        }
         Ok(Dict {
             sec,
             n,
@@ -483,9 +484,10 @@ impl Dict {
                                 data[ib + m * 24 + 16..ib + m * 24 + 20].try_into().ok()?,
                             );
                             if let Some(ss) = self.get(data, id)
-                                && ss == s {
-                                    return Some(id);
-                                }
+                                && ss == s
+                            {
+                                return Some(id);
+                            }
                             m += 1;
                         }
                         return None;
@@ -497,9 +499,10 @@ impl Dict {
             // fallback linear search
             for i in 0..self.n {
                 if let Some(ss) = self.get(data, i)
-                    && ss == s {
-                        return Some(i);
-                    }
+                    && ss == s
+                {
+                    return Some(i);
+                }
             }
             None
         }
@@ -1030,7 +1033,7 @@ impl R5tuFile {
                     let frame = &data[payload_start..payload_start + raw_len];
                     let raw = zstd::decode_all(std::io::Cursor::new(frame))
                         .map_err(|_| R5Error::Corrupt("zstd decode".into()))?;
-                    return self.decode_raw_payload(&raw);
+                    self.decode_raw_payload(&raw)
                 }
                 #[cfg(not(feature = "zstd"))]
                 {
@@ -1099,14 +1102,14 @@ impl R5tuFile {
             off = o;
             p_vals[start] = first;
             let mut cur = first;
-            for i in (start + 1)..end {
+            for v in p_vals[start + 1..end].iter_mut() {
                 let (d, o2) =
                     read_uvarint(raw, off).ok_or_else(|| R5Error::Corrupt("P delta".into()))?;
                 off = o2;
                 cur = cur
                     .checked_add(d)
                     .ok_or_else(|| R5Error::Corrupt("P overflow".into()))?;
-                p_vals[i] = cur;
+                *v = cur;
             }
         }
         // P_heads (prefix sums into O)
@@ -1137,14 +1140,14 @@ impl R5tuFile {
             off = o;
             o_vals[start] = first;
             let mut cur = first;
-            for i in (start + 1)..end {
+            for v in o_vals[start + 1..end].iter_mut() {
                 let (d, o2) =
                     read_uvarint(raw, off).ok_or_else(|| R5Error::Corrupt("O delta".into()))?;
                 off = o2;
                 cur = cur
                     .checked_add(d)
                     .ok_or_else(|| R5Error::Corrupt("O overflow".into()))?;
-                o_vals[i] = cur;
+                *v = cur;
             }
         }
 

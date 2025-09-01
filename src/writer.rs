@@ -5,6 +5,13 @@ use std::path::{Path, PathBuf};
 use crate::header::{Section, SectionKind, TocEntry, crc32_ieee};
 use crate::reader::{R5Error, Result};
 
+// Simple type aliases to reduce type complexity noise
+type GroupKey = (u32, u32);
+type TripleIds = (u64, u64, u64);
+type GroupsMap = BTreeMap<GroupKey, Vec<TripleIds>>;
+type GidRow = (u32, u32, Section, u64, u32, u32, u32);
+type PairEntry = (u32, u32, u64);
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Term {
     Iri(String),
@@ -110,7 +117,7 @@ pub fn write_file_with_options<P: AsRef<Path>>(
     }
 
     // 2) Group by (id_id, gn_id) and sort SPO
-    let mut groups: BTreeMap<(u32, u32), Vec<(u64, u64, u64)>> = BTreeMap::new();
+    let mut groups: GroupsMap = BTreeMap::new();
     for (id_id, gn_id, s, p, o) in triples {
         groups.entry((id_id, gn_id)).or_default().push((s, p, o));
     }
@@ -146,7 +153,7 @@ pub fn write_file_with_options<P: AsRef<Path>>(
 
     // TRIPLE_BLOCKS
     let tb_off = file.len();
-    let mut gid_rows: Vec<(u32, u32, Section, u64, u32, u32, u32)> = Vec::new();
+    let mut gid_rows: Vec<GidRow> = Vec::new();
     // For stable GID ordering, iterate groups in key order (BTreeMap)
     for ((id_id, gn_id), spo) in &groups {
         let start = file.len();
@@ -220,7 +227,7 @@ pub fn write_file_with_options<P: AsRef<Path>>(
     });
 
     // Build GID mapping for postings & pair index
-    let mut pair_entries: Vec<(u32, u32, u64)> = Vec::new();
+    let mut pair_entries: Vec<PairEntry> = Vec::new();
     let mut id2gids: Vec<Vec<u64>> = vec![Vec::new(); id_vec.len()];
     let mut gn2gids: Vec<Vec<u64>> = vec![Vec::new(); gn_vec.len()];
     for (gid, (id_id, gn_id, _, _, _, _, _)) in gid_rows.iter().enumerate() {
@@ -307,7 +314,7 @@ pub struct StreamingWriter {
     id_vec: Vec<String>,
     gn_vec: Vec<String>,
     term_vec: Vec<Term>,
-    groups: BTreeMap<(u32, u32), Vec<(u64, u64, u64)>>,
+    groups: GroupsMap,
 }
 
 impl StreamingWriter {
@@ -396,7 +403,7 @@ impl StreamingWriter {
         });
 
         let tb_off = file.len();
-        let mut gid_rows: Vec<(u32, u32, Section, u64, u32, u32, u32)> = Vec::new();
+        let mut gid_rows: Vec<GidRow> = Vec::new();
         for ((id_id, gn_id), spo) in &self.groups {
             let start = file.len();
             let raw = build_raw_spo(spo)?;
@@ -464,7 +471,7 @@ impl StreamingWriter {
         });
 
         // Postings and pair index
-        let mut pair_entries: Vec<(u32, u32, u64)> = Vec::new();
+        let mut pair_entries: Vec<PairEntry> = Vec::new();
         let mut id2gids: Vec<Vec<u64>> = vec![Vec::new(); self.id_vec.len()];
         let mut gn2gids: Vec<Vec<u64>> = vec![Vec::new(); self.gn_vec.len()];
         for (gid, (id_id, gn_id, _, _, _, _, _)) in gid_rows.iter().enumerate() {
