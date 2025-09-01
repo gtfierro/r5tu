@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: Test (${{ matrix.os }} | features: ${{ matrix.features }})
+    name: "Test (${{ matrix.os }} | features: ${{ matrix.features }})"
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -34,6 +34,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Build
+        shell: bash
         run: |
           if [ -z "${{ matrix.features }}" ]; then
             cargo build --all-targets --locked
@@ -42,6 +43,7 @@ jobs:
           fi
 
       - name: Test
+        shell: bash
         run: |
           if [ -z "${{ matrix.features }}" ]; then
             cargo test --locked
