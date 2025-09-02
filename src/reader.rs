@@ -332,6 +332,20 @@ impl R5tuFile {
         self.term_dict.term_to_string(self.bytes(), term_id)
     }
 
+    /// Internal helper: convert a term id into the writer's [`crate::writer::Term`].
+    ///
+    /// Exposed as `pub(crate)` for modules that need to reconstruct quads
+    /// faithfully (e.g., update routines).
+    pub(crate) fn term_as_writer_term(&self, term_id: u64) -> Result<crate::writer::Term> {
+        let parts = self.term_dict.term_parts(self.bytes(), term_id)?;
+        let t = match parts {
+            TermParts::Iri(s) => crate::writer::Term::Iri(s),
+            TermParts::BNode(b) => crate::writer::Term::BNode(b),
+            TermParts::Literal { lex, dt, lang } => crate::writer::Term::Literal { lex, dt, lang },
+        };
+        Ok(t)
+    }
+
     #[cfg(feature = "oxigraph")]
     pub fn to_oxigraph_graph(&self, gid: u64) -> Result<oxigraph::model::Graph> {
         use oxigraph::model::{BlankNode, Graph, Literal, NamedNode, NamedOrBlankNode, Triple};
@@ -655,8 +669,10 @@ impl TermDict {
         }
     }
 
-    #[cfg_attr(not(feature = "oxigraph"), allow(dead_code))]
-    fn term_parts(&self, data: &[u8], term_id: u64) -> Result<TermParts> {
+    // Exposed for internal crate use (e.g., update module) to faithfully
+    // reconstruct writer terms from an existing file without going through
+    // a third-party representation.
+    pub(crate) fn term_parts(&self, data: &[u8], term_id: u64) -> Result<TermParts> {
         if term_id >= self.n_terms {
             return Err(R5Error::Invalid("term id out of range"));
         }
@@ -732,9 +748,8 @@ impl TermDict {
     }
 }
 
-#[cfg_attr(not(feature = "oxigraph"), allow(dead_code))]
 #[derive(Debug, Clone)]
-enum TermParts {
+pub(crate) enum TermParts {
     Iri(String),
     BNode(String),
     Literal {

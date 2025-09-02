@@ -43,11 +43,13 @@
 pub mod header;
 pub mod reader;
 pub mod writer;
+pub mod update;
 
 pub use reader::{GraphRef, R5tuFile};
 pub use writer::{
     Quint, StreamingWriter, Term, WriterOptions, write_file, write_file_with_options,
 };
+pub use update::{replace_graph, replace_graph_with_options};
 
 /// Crate‑level result type using the reader error.
 pub type Result<T> = std::result::Result<T, crate::reader::R5Error>;
